@@ -1,0 +1,21 @@
+{
+  "name": "casepilot-ai",
+  "version": "1.0.0",
+  "description": "Full-stack MERN application for case study interview practice with AI-powered interviewer",
+  "scripts": {
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "install": "cd server && npm install && cd ../client && npm install"
+  },
+  "keywords": [
+    "mern",
+    "ai",
+    "case-study",
+    "interview",
+    "groq",
+    "react",
+    "tailwindcss"
+  ],
+  "author": "",
+  "license": "ISC"
+}
