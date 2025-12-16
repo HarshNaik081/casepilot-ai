@@ -2,6 +2,12 @@ import Groq from "groq-sdk";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { 
+  RCA_CASE_PROMPT, 
+  INTERRUPTION_TRIGGERS, 
+  IMMERSION_FALLBACKS,
+  CASE_STAGE 
+} from "./utils/systemPrompts.js";
 
 dotenv.config();
 
@@ -21,26 +27,23 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
-// System Message for "Vikram" - The Indian Context Interviewer
-const SYSTEM_MESSAGE = `
-IDENTITY:
-You are Vikram, a Senior Product Manager at a high-growth Indian unicorn (like Swiggy, Zepto, or Paytm). You are interviewing a candidate for a PM/Biz Ops role.
+// Interview State Tracker (In-memory for MVP, can be moved to DB later)
+const interviewSessions = new Map();
 
-YOUR PERSONA:
-1.  **Strict & Data-Driven:** You hate fluff. If the candidate says "I will improve marketing," you cut them off and ask "What is the CAC? What is the ROI?"
-2.  **Indian Context Only:** All your cases and feedback must be rooted in India. Mention Tier-2 cities, UPI failure rates, monsoon logistics, rider strikes, or kirana store adoption.
-3.  **Socratic Pressure:** Do not give answers. If they struggle, ask a sharp question like "Have you looked at the unit economics of a single order?"
-4.  **No "Good Job":** Only compliment if the insight is truly exceptional. Otherwise, simply say "Okay, move on."
+// Helper: Check if user message triggers interruption
+function shouldInterrupt(message) {
+  for (const trigger of INTERRUPTION_TRIGGERS) {
+    if (trigger.pattern.test(message)) {
+      return trigger.response;
+    }
+  }
+  return null;
+}
 
-CURRENT CASE:
-Start the conversation immediately with this problem:
-"Zepto is seeing a 15% drop in retention in Jaipur after the first 3 orders. Competitors are eating our share. Diagnose this."
-
-INSTRUCTIONS:
-- Keep responses short (under 40 words).
-- If the candidate is vague, interrupt them.
-- Focus on Root Cause Analysis (RCA) first.
-`;
+// Helper: Get random fallback message
+function getRandomFallback() {
+  return IMMERSION_FALLBACKS[Math.floor(Math.random() * IMMERSION_FALLBACKS.length)];
+}
 
 // POST /api/chat - Main endpoint for chat
 app.post("/api/chat", async (req, res) => {
@@ -48,49 +51,96 @@ app.post("/api/chat", async (req, res) => {
   console.log("Body:", req.body);
 
   try {
-    const { message, history } = req.body;
+    const { message, history, sessionId = 'default' } = req.body;
 
     // Validate input
     if (!message || typeof message !== "string") {
       return res.status(400).json({ error: "Message is required and must be a string" });
     }
 
-    // Construct messages array
+    // Check for interruption triggers (Vikram's impatience)
+    const interruptionResponse = shouldInterrupt(message);
+    if (interruptionResponse && message.length > 50) {
+      // Only interrupt if message is long AND vague
+      return res.json({ 
+        response: interruptionResponse,
+        interrupted: true 
+      });
+    }
+
+    // Initialize session if doesn't exist
+    if (!interviewSessions.has(sessionId)) {
+      interviewSessions.set(sessionId, {
+        stage: CASE_STAGE.PROBLEM_STATEMENT,
+        caseType: 'RCA',
+        startTime: Date.now(),
+        messageCount: 0
+      });
+    }
+
+    const session = interviewSessions.get(sessionId);
+    session.messageCount++;
+
     // Construct messages array with system message first
     const messages = [
       {
         role: "system",
-        content: SYSTEM_MESSAGE,
-      },
-      {
-        role: "user",
-        content: message,
-      },
+        content: RCA_CASE_PROMPT, // Using modular prompt
+      }
     ];
 
-    // Add conversation history (if any) - insert between system and user message
+    // Add conversation history (if any)
     if (Array.isArray(history) && history.length > 0) {
-      // We want: [System, ...History, User]
-      // Current messages: [System, User]
-      // Insert history at index 1
-      messages.splice(1, 0, ...history);
+      messages.push(...history);
     }
 
-    // Call Groq API
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 1024,
+    // Add current user message
+    messages.push({
+      role: "user",
+      content: message,
     });
 
-    // Extract the response
-    const aiResponse = response.choices[0].message.content;
+    // Call Groq API with retry logic
+    let aiResponse;
+    try {
+      const response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 1024,
+      });
 
-    res.json({ response: aiResponse });
+      aiResponse = response.choices[0].message.content;
+    } catch (groqError) {
+      // Graceful fallback to maintain immersion
+      console.error("Groq API Error:", groqError.message);
+      aiResponse = getRandomFallback();
+      
+      // Return fallback with retry flag
+      return res.json({ 
+        response: aiResponse,
+        shouldRetry: true 
+      });
+    }
+
+    // Update session stage based on conversation progress
+    if (session.messageCount > 5 && session.stage === CASE_STAGE.PROBLEM_STATEMENT) {
+      session.stage = CASE_STAGE.CLARIFICATION;
+    } else if (session.messageCount > 10 && session.stage === CASE_STAGE.CLARIFICATION) {
+      session.stage = CASE_STAGE.ROOT_CAUSE_ANALYSIS;
+    }
+
+    res.json({ 
+      response: aiResponse,
+      stage: session.stage,
+      messageCount: session.messageCount
+    });
   } catch (error) {
-    console.error("Error:", error.message);
-    res.status(500).json({ error: "Failed to process your request" });
+    console.error("Server Error:", error.message);
+    res.status(500).json({ 
+      error: "Failed to process your request",
+      fallback: getRandomFallback()
+    });
   }
 });
 

@@ -6,6 +6,9 @@ export const useChat = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [interviewStage, setInterviewStage] = useState('problem_statement');
+    const [messageCount, setMessageCount] = useState(0);
+    const [sessionId] = useState(() => `session_${Date.now()}`);
 
     const handleSendMessage = async (e) => {
         if (e) e.preventDefault();
@@ -19,8 +22,36 @@ export const useChat = () => {
         setIsLoading(true);
 
         try {
-            const aiResponse = await sendMessage(inputValue, messages);
-            const aiMessage = { role: 'assistant', content: aiResponse };
+            // Send message with session tracking
+            const response = await fetch(`${API_URL}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: inputValue,
+                    history: messages,
+                    sessionId: sessionId
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Handle interruption
+            if (data.interrupted) {
+                const aiMessage = { role: 'assistant', content: `⚠️ **[INTERRUPTED]**\n\n${data.response}` };
+                setMessages([...updatedMessages, aiMessage]);
+                setIsLoading(false);
+                return;
+            }
+
+            // Update stage and message count if provided
+            if (data.stage) setInterviewStage(data.stage);
+            if (data.messageCount) setMessageCount(data.messageCount);
+
+            const aiMessage = { role: 'assistant', content: data.response };
             setMessages([...updatedMessages, aiMessage]);
         } catch (error) {
             console.error('Error:', error);
@@ -37,6 +68,8 @@ export const useChat = () => {
     const handleReset = () => {
         setMessages([]);
         setInputValue('');
+        setInterviewStage('problem_statement');
+        setMessageCount(0);
     };
 
     return {
@@ -46,5 +79,7 @@ export const useChat = () => {
         isLoading,
         handleSendMessage,
         handleReset,
+        interviewStage,
+        messageCount,
     };
 };

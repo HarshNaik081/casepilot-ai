@@ -4,6 +4,7 @@ import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import LoadingIndicator from './components/LoadingIndicator';
 import WelcomeScreen from './components/WelcomeScreen';
+import InterviewStageTracker from './components/InterviewStageTracker';
 import { useChat } from './hooks/useChat';
 import { useAutoScroll } from './hooks/useAutoScroll';
 
@@ -15,6 +16,8 @@ export default function App() {
     isLoading,
     handleSendMessage,
     handleReset,
+    interviewStage,
+    messageCount,
   } = useChat();
 
   const scrollRef = useAutoScroll([messages]);
@@ -50,11 +53,21 @@ export default function App() {
             {messages.length === 0 ? (
               <WelcomeScreen />
             ) : (
-              <AnimatePresence>
-                {messages.map((msg, index) => (
-                  <ChatMessage key={index} message={msg} index={index} />
-                ))}
-              </AnimatePresence>
+              <>
+                {/* Stage Tracker - Show after first message */}
+                {messages.length > 0 && (
+                  <InterviewStageTracker 
+                    currentStage={interviewStage} 
+                    messageCount={messageCount}
+                  />
+                )}
+                
+                <AnimatePresence>
+                  {messages.map((msg, index) => (
+                    <ChatMessage key={index} message={msg} index={index} />
+                  ))}
+                </AnimatePresence>
+              </>
             )}
 
             {/* Loading State */}

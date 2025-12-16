@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import { User, Bot } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ROLES } from '../utils/constants';
 
 export default function ChatMessage({ message, index }) {
@@ -38,7 +40,34 @@ export default function ChatMessage({ message, index }) {
                             <span className="text-xs font-semibold text-white/80">Vikram - Senior PM</span>
                         </div>
                     )}
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    {isUser ? (
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                        <div className="prose prose-invert prose-sm max-w-none">
+                            <ReactMarkdown 
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                    // Custom styling for markdown elements
+                                    p: ({node, ...props}) => <p className="text-sm leading-relaxed mb-2" {...props} />,
+                                    strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
+                                    em: ({node, ...props}) => <em className="italic text-white/90" {...props} />,
+                                    ul: ({node, ...props}) => <ul className="list-disc list-inside space-y-1 my-2" {...props} />,
+                                    ol: ({node, ...props}) => <ol className="list-decimal list-inside space-y-1 my-2" {...props} />,
+                                    li: ({node, ...props}) => <li className="text-sm" {...props} />,
+                                    table: ({node, ...props}) => <table className="w-full border-collapse my-2" {...props} />,
+                                    thead: ({node, ...props}) => <thead className="bg-white/10" {...props} />,
+                                    th: ({node, ...props}) => <th className="border border-white/20 px-3 py-2 text-left text-xs font-semibold" {...props} />,
+                                    td: ({node, ...props}) => <td className="border border-white/20 px-3 py-2 text-sm" {...props} />,
+                                    code: ({node, inline, ...props}) => 
+                                        inline 
+                                            ? <code className="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono" {...props} />
+                                            : <code className="block bg-white/10 p-3 rounded-lg text-xs font-mono overflow-x-auto" {...props} />
+                                }}
+                            >
+                                {message.content}
+                            </ReactMarkdown>
+                        </div>
+                    )}
                 </div>
             </div>
         </motion.div>
